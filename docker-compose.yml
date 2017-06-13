@@ -41,6 +41,8 @@ services:
     restart: always
   elasticsearch:
     image: elasticsearch:2.4
+    volumes:
+      - ./contrib:/usr/share/elasticsearch/config/scripts
     restart: always
   postgres:
     image: postgres:9.6-alpine
