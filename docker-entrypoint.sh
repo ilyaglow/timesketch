@@ -2,6 +2,9 @@
 
 # Fill /etc/timesketch.conf with valid data
 function prepare {
+	# Sleep while postgres is setting up
+	sleep 10
+
 	# Set SECRET_KEY in /etc/timesketch.conf if it isn't already set
 	if grep -q "SECRET_KEY = u''" /etc/timesketch.conf; then
 		OPENSSL_RAND=$( openssl rand -base64 32 )
