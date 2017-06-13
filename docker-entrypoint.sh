@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Run the container the default way
-if [ "$1" = 'timesketch' ]; then
+# Fill /etc/timesketch.conf with valid data
+function prepare {
 	# Set SECRET_KEY in /etc/timesketch.conf if it isn't already set
 	if grep -q "SECRET_KEY = u''" /etc/timesketch.conf; then
 		OPENSSL_RAND=$( openssl rand -base64 32 )
@@ -18,6 +18,19 @@ if [ "$1" = 'timesketch' ]; then
 		exit 1
 	fi
 
+	# Set up the Redis connection for Celery broker
+	if [ $REDIS_ADDRESS ] && [ $REDIS_PORT ]; then
+	        # Turn on the upload feature
+	        sed -i 's#UPLOAD_ENABLED = False#UPLOAD_ENABLED = True#' /etc/timesketch.conf
+	        sed -i 's#UPLOAD_FOLDER = u\x27/tmp\x27#UPLOAD_FOLDER = u\x27/timelines\x27#' /etc/timesketch.conf
+	
+	        sed -i 's#redis://127.0.0.1:6379#redis://'$REDIS_ADDRESS':'$REDIS_PORT'#g' /etc/timesketch.conf
+	else
+	        # Log an error since we need the above-listed environment variables
+	        echo "Please pass values for the REDIS_ADDRESS and REDIS_PORT environment variables"
+	        exit 1
+	fi
+
 	# Set up the Elastic connection
 	if [ $ELASTIC_ADDRESS ] && [ $ELASTIC_PORT ]; then
 		sed -i 's#ELASTIC_HOST = u\x27127.0.0.1\x27#ELASTIC_HOST = u\x27'$ELASTIC_ADDRESS'\x27#' /etc/timesketch.conf
@@ -26,6 +39,12 @@ if [ "$1" = 'timesketch' ]; then
 		# Log an error since we need the above-listed environment variables
 		echo "Please pass values for the ELASTIC_ADDRESS and ELASTIC_PORT environment variables"
 	fi
+
+}
+
+# Run the container the default way
+if [ "$1" = 'timesketch' ]; then
+	prepare
 
 	# Set up web credentials
 	if [ -z ${TIMESKETCH_USER+x} ]; then
@@ -36,12 +55,18 @@ if [ "$1" = 'timesketch' ]; then
 		TIMESKETCH_PASSWORD="$(openssl rand -base64 32)"
 		echo "TIMESKETCH_PASSWORD set randomly to: ${TIMESKETCH_PASSWORD}";
 	fi
+	
 	tsctl add_user -u "$TIMESKETCH_USER" -p "$TIMESKETCH_PASSWORD"
-
 
 	# Run the Timesketch server (without SSL)
 	exec `tsctl runserver -h 0.0.0.0 -p 5000`
-fi
+
+# Run celery worker
+elif [ "$1" = 'worker' ]; then
+	prepare
+	exec `celery -A timesketch.lib.tasks worker --uid nobody --autoscale=10,1 --loglevel=info`
 
 # Run a custom command on container start
-exec "$@"
+else
+	exec "$@"
+fi
